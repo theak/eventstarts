@@ -1,14 +1,21 @@
 import requests, pytz, recurring_ical_events
 from datetime import datetime, timedelta
-from icalendar import Calendar
+from icalendar import Calendar, vCalAddress
 
-def any_meetings_starting(url: str, minutes_from_now: int) -> bool:
+def _is_going(username: str, participants: list[vCalAddress]) -> bool:
+  for participant in participants:
+    if username in participant.params['CN']:
+      return participant.params['PARTSTAT'] == 'ACCEPTED'
+  return False
+
+def any_meetings_starting(url: str, minutes_from_now: int, username: str|None = None) -> bool:
   """
   This function checks if any events in an ICS url start in the next n minutes.
 
   Args:
       url (str): URL to the ICS file.
       minutes_from_now (int): How many minutes from now to check.
+      username (str): Name of attendee to check if they have RSPV'd yes.
 
   Returns:
       bool: True if an event starts within minutes_from_now, False otherwise.
@@ -43,8 +50,11 @@ def any_meetings_starting(url: str, minutes_from_now: int) -> bool:
 
         start_time_utc = start_time.astimezone(pytz.utc)
         print("start_time", str(start_time_utc))
+        participants = component.get("ATTENDEE")
+        rsvp = _is_going(username, participants) if username else True
+        print("RSVP:", rsvp)
         
-        if start_time_utc >= now and start_time_utc <= n_minutes_from_now:
+        if start_time_utc >= now and start_time_utc <= n_minutes_from_now and rsvp:
           return True
     
     return False
