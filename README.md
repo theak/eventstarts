@@ -6,5 +6,6 @@ Works with Google Calendar or any other calendar provider with ics support.
 
 Instructions:
 1. Clone the repo
-2. Edit the values in `main.py`
-3. Run `python main.py`
+2. Create a virtualenv and run `pip install -r requirements.txt` in it.
+3. Edit the values in `main.py`
+4. Run `python main.py`
