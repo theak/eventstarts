@@ -2,7 +2,9 @@ import requests, pytz, recurring_ical_events
 from datetime import datetime, timedelta
 from icalendar import Calendar, vCalAddress
 
-def _is_going(username: str, participants: list[vCalAddress]) -> bool:
+def _is_going(username: str, participants: list[vCalAddress] | None) -> bool:
+  if participants is None:
+    return True
   for participant in participants:
     if username in participant.params['CN']:
       return participant.params['PARTSTAT'] == 'ACCEPTED'
