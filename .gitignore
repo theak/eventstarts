@@ -1,3 +1,4 @@
 main_*.py
+today_*.py
 *.ics
 __pycache__

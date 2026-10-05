@@ -1,14 +1,66 @@
 import requests, pytz, recurring_ical_events
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from icalendar import Calendar, vCalAddress
 
-def _is_going(username: str, participants: list[vCalAddress] | None) -> bool:
+def _is_going(username: str, participants: list[vCalAddress] | vCalAddress | None) -> bool:
+  return _rsvp(username, participants) in (None, 'ACCEPTED')
+
+def _rsvp(username: str, participants: list[vCalAddress] | vCalAddress | None) -> str | None:
+  """Returns username's PARTSTAT (ACCEPTED, TENTATIVE, NEEDS-ACTION, DECLINED), or None if
+  the event has no attendees. icalendar returns a single attendee unwrapped."""
   if participants is None:
-    return True
+    return None
+  if not isinstance(participants, list):
+    participants = [participants]
   for participant in participants:
-    if username in participant.params['CN']:
-      return participant.params['PARTSTAT'] == 'ACCEPTED'
-  return False
+    if username in participant.params.get('CN', ''):
+      return participant.params.get('PARTSTAT', 'NEEDS-ACTION')
+  return 'NOT-INVITED'
+
+def todays_events(url: str, timezone: str, username: str|None = None) -> list[dict]:
+  """
+  This function lists today's events in an ICS url, including ones already over.
+
+  Args:
+      url (str): URL to the ICS file.
+      timezone (str): Time zone that defines "today", e.g. "America/Los_Angeles".
+      username (str): Name of attendee whose declined events are left out.
+
+  Returns:
+      list[dict]: {"summary", "start", "end", "rsvp"} per event, sorted by start, with ISO 8601
+      times in timezone. All-day and cancelled events are skipped.
+  """
+  zone = pytz.timezone(timezone)
+  day_start = zone.localize(datetime.combine(datetime.now(zone).date(), time.min))
+  day_end = day_start + timedelta(days=1)
+
+  response = requests.get(url, timeout=30)
+  response.raise_for_status()
+  calendar = Calendar.from_ical(response.text)
+
+  events = []
+  for component in recurring_ical_events.of(calendar).between(day_start, day_end):
+    if component.name != "VEVENT" or component.get("STATUS") == "CANCELLED":
+      continue
+    start = component.get("DTSTART").dt
+    if not isinstance(start, datetime):
+      continue  # All-day events have a date, not a datetime
+    if component.get("DTEND"):
+      end = component.get("DTEND").dt
+    else:
+      end = start + (component.get("DURATION").dt if component.get("DURATION") else timedelta())
+    start, end = (zone.localize(t) if t.tzinfo is None else t.astimezone(zone) for t in (start, end))
+
+    rsvp = _rsvp(username, component.get("ATTENDEE")) if username else None
+    if rsvp in ('DECLINED', 'NOT-INVITED'):
+      continue
+    events.append({
+      "summary": str(component.get("SUMMARY", "Untitled event")),
+      "start": start.isoformat(),
+      "end": end.isoformat(),
+      "rsvp": (rsvp or 'ACCEPTED').lower(),
+    })
+  return sorted(events, key=lambda e: e["start"])
 
 def any_meetings_starting(url: str, minutes_from_now: int, username: str|None = None) -> bool:
   """
